@@ -4,8 +4,9 @@
 // from disk so that neither end holds it in memory; see package uploadclient
 // for what -mode does.
 //
-// It uses net/http's client: fib's own client buffers a request body whole,
-// which is what an upload of this size must not do.
+// It uses net/http's client, a standard client that knows nothing of fib, so
+// the example also shows one streaming a body of this size to the server;
+// fib's own client streams a large request body too.
 //
 //	go run ./http/upload/mkfile -size 1GiB -o /tmp/big.bin
 //	go run ./http/upload/client -mode resume -file /tmp/big.bin -name part.bin -max-chunks 3

@@ -81,6 +81,6 @@ func newEngine(addr, dir string, maxSize int64) (*fib.Engine, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	return fib.New(config, fib.Binding{Addr: addr, Handler: fibhttp.NewHandlerWithConfig(service.Config(maxSize), service.Handler(dir))})
 }

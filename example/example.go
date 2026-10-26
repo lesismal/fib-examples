@@ -11,6 +11,15 @@ import (
 	fib "github.com/lesismal/fib"
 )
 
+// EngineConfig is the engine configuration every example builds: fib's
+// defaults, with its startup settings list off, so that each program's own
+// lines are the only output. Engine.LogSettings prints the list on demand.
+func EngineConfig() fib.Config {
+	config := fib.DefaultConfig()
+	config.LogSettings = false
+	return config
+}
+
 // Start runs engine on a goroutine of its own and returns a function that
 // stops and closes it, and reports what Run returned.
 func Start(engine *fib.Engine) (stop func() error) {
@@ -60,7 +69,7 @@ func Addr(engine *fib.Engine) string {
 // ClientEngine starts an engine with no listener, for dialing, and returns a
 // function that stops and closes it.
 func ClientEngine() (*fib.Engine, func()) {
-	engine, err := fib.New(fib.DefaultConfig())
+	engine, err := fib.New(EngineConfig())
 	if err != nil {
 		Fatal(err)
 	}

@@ -1,10 +1,11 @@
 //go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd || windows
 
 // Command client sends a file to the HTTP/3 upload server; see package
-// uploadclient for what -mode does. It uses fib's HTTP/3 client, which holds
-// each request's body, and each response's, in memory: so -mode upload and
-// -mode echo need the file to fit, while -mode resume sends it in -chunk sized
-// requests and holds only one at a time, which is what to use for a large file.
+// uploadclient for what -mode does. It uses fib's HTTP/3 client: request
+// bodies stream from disk as they are read, while Go and Wait hold each
+// response whole, so -mode upload and -mode resume keep only a short reply in
+// memory and -mode echo needs the echoed file to fit. Use -mode resume for a
+// large echo.
 //
 //	go run ./http/upload/mkfile -size 1GiB -o /tmp/big.bin
 //	go run ./http3/upload/client -mode resume -file /tmp/big.bin -name part.bin -max-chunks 3
@@ -60,8 +61,9 @@ func run(args []string, out io.Writer) error {
 	defer stop()
 	config := http3.DefaultClientConfig()
 	config.TLSConfig = tlsConfig
-	// A large body takes longer than the default, and a response is buffered
-	// whole, so it has to be allowed to be as large as the file.
+	// A large body takes longer than the default, and a response is held whole
+	// (which -mode echo makes file-sized), so it has to be allowed to be as
+	// large as the file.
 	config.Timeout = 10 * time.Minute
 	config.MaxResponseBodyBytes = 4 << 30
 	client := http3.NewClient(engine, config)

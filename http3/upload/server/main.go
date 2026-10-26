@@ -90,7 +90,7 @@ func newEngine(addr, dir string, maxSize int64, tlsConfig *tls.Config) (*fib.Eng
 	config.StreamRequestBody = true
 	config.StreamRequestBodyThreshold = 0
 	config.MaxStreamedBodyBytes = maxSize
-	engineConfig := fib.DefaultConfig()
+	engineConfig := example.EngineConfig()
 	engineConfig.Network = "udp"
 	return fib.New(engineConfig, fib.Binding{Addr: addr, Handler: http3.NewHandlerWithConfig(config, service.Handler(dir))})
 }

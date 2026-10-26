@@ -59,7 +59,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	httpConfig.HTTP2Only = true
 	handler := fibhttp.NewHandlerWithConfig(httpConfig, echo())
 
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 
 	scheme, engine, err := "http", (*fib.Engine)(nil), error(nil)
 	if *useTLS {

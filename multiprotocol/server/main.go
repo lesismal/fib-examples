@@ -77,7 +77,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 
 	plain := fibhttp.NewHandler(web)
 	secure := fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), fibhttp.NewHandler(web))
-	engine, err := fib.New(fib.DefaultConfig(),
+	engine, err := fib.New(example.EngineConfig(),
 		fib.Binding{Addr: *httpAddr, Handler: plain},
 		fib.Binding{Addr: *httpsAddr, Handler: secure},
 		fib.Binding{Network: "udp", Addr: *httpsAddr, Handler: http3.NewHandler(tlsConfig, web)},

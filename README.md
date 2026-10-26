@@ -12,7 +12,7 @@ runs it, and the module depends on fib the way any application would.
 
 ## Running them
 
-Go 1.27 or later. Clone the repository and run each example from its root:
+Go 1.27.3 or later. Clone the repository and run each example from its root:
 
 ```sh
 git clone https://github.com/lesismal/fib-examples && cd fib-examples
@@ -22,7 +22,10 @@ go run ./tcp/nontls/client     # in another
 
 Start a server first, then its client in another terminal. An echo client sends 5 messages by default
 (`-n` changes it), prints each echo and exits; a server runs until Ctrl-C. `-addr` (TCP, UDP, arpc,
-gRPC) or `-url` (HTTP, WebSocket) points them elsewhere, and `-h` lists every flag.
+gRPC) or `-url` (HTTP, WebSocket) points them elsewhere, and `-h` lists every flag. The examples
+build their engines with `example.EngineConfig()`, which is `fib.DefaultConfig()` with fib's startup
+settings list off, so each program prints only its own lines; call `Engine.LogSettings()` to print
+the list.
 
 ## The examples
 
@@ -59,7 +62,7 @@ against both WebSocket servers.
 | [`http/router`](http/router) | `fibhttp.Router`: routes with parameters and regular expressions, a `Route` with middleware of its own, a mounted sub-router, 404 and 405; the curl commands are in its doc comment |
 | [`http/upload`](http/upload) | large HTTP/1 request bodies with `StreamRequestBody`, in flat memory: `POST /upload` (`SaveBody`), resumable `PUT /resume` (`SaveBodyResumable`) and `POST /echo` (`OnBody`); `mkfile` writes a reproducible test file, and `client -mode upload\|resume\|echo` streams it and checks the SHA-256 |
 | [`http2/upload`](http2/upload) | the same endpoints over HTTP/2 (TLS, `HTTP2Only`), paced by the stream's flow-control window |
-| [`http3/upload`](http3/upload) | the same endpoints over HTTP/3, paced by QUIC flow control; use `-mode resume` for large files, as fib's HTTP/3 client holds a request body in memory |
+| [`http3/upload`](http3/upload) | the same endpoints over HTTP/3, paced by QUIC flow control; request bodies stream from disk, and `-mode echo` holds the response whole, so use `-mode resume` for a large echo |
 | [`http2only`](http2only) | an HTTP/2-only echo server (h2c, or h2 with `-tls`) that ends a connection without the HTTP/2 preface with GOAWAY; fib's CI runs [h2spec](https://github.com/summerwind/h2spec) against it |
 
 An upload session, for example:

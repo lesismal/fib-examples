@@ -92,7 +92,7 @@ func newEngine(addr, dir string, maxSize int64, tlsConfig *tls.Config) (*fib.Eng
 	// Every connection is HTTP/2: one that does not open with its preface is
 	// ended with GOAWAY rather than answered in HTTP/1.
 	httpConfig.HTTP2Only = true
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	// fibtls decrypts in front of the HTTP handler; ConfigureTLS offers h2
 	// through ALPN.
 	return fib.New(config, fib.Binding{Addr: addr, Handler: fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), fibhttp.NewHandlerWithConfig(httpConfig, service.Handler(dir)))})

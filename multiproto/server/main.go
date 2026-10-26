@@ -87,7 +87,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 
 	// One handler serves HTTP/1.1, h2c and, behind TLS, HTTPS.
 	web := fibhttp.NewHandler(describe())
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	engine, err := fib.New(config, fib.Binding{Addr: *addr, Handler: multiproto.New(multiproto.Config{
 		TLS:       fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), web),
 		HTTP1:     web,

@@ -11,7 +11,7 @@ HTTP/2 与 HTTP/3、WebSocket、gRPC、arpc、SOCKS、同一端口上的多种�
 
 ## 运行
 
-需要 Go 1.27 及以上。克隆仓库后在根目录运行各个示例：
+需要 Go 1.27.3 及以上。克隆仓库后在根目录运行各个示例：
 
 ```sh
 git clone https://github.com/lesismal/fib-examples && cd fib-examples
@@ -21,7 +21,8 @@ go run ./tcp/nontls/client     # 另一个终端
 
 先启动 server，再在另一个终端运行对应的 client。echo client 默认发送 5 条消息（`-n` 修改），逐条打印回显后
 退出；server 按 Ctrl-C 退出。地址用 `-addr`（TCP、UDP、arpc、gRPC）或 `-url`（HTTP、WebSocket）修改，
-`-h` 列出全部参数。
+`-h` 列出全部参数。示例用 `example.EngineConfig()` 创建引擎：它是 `fib.DefaultConfig()`，只关掉了 fib
+启动时的设置清单，让每个程序只打印自己的输出；需要时调用 `Engine.LogSettings()` 打印。
 
 ## 示例一览
 
@@ -57,7 +58,7 @@ fib 的 CI 用这两个 WebSocket server 跑 [Autobahn](https://github.com/cross
 | [`http/router`](http/router) | `fibhttp.Router`：带参数与正则的路由、带自己中间件的 `Route`、`Mount` 的子 Router，以及 404/405；curl 命令见文件头注释 |
 | [`http/upload`](http/upload) | 用 `StreamRequestBody` 接收 HTTP/1 大 body，内存不随 body 增长：`POST /upload`（`SaveBody`）、可断点续传的 `PUT /resume`（`SaveBodyResumable`）、`POST /echo`（`OnBody`）；`mkfile` 生成可复现的测试文件，`client -mode upload\|resume\|echo` 流式发送并校验 SHA-256 |
 | [`http2/upload`](http2/upload) | 同一套接口走 HTTP/2（TLS，`HTTP2Only`），由流的流控窗口施加背压 |
-| [`http3/upload`](http3/upload) | 同一套接口走 HTTP/3，由 QUIC 流控施加背压；fib 的 HTTP/3 客户端会把请求 body 整个读进内存，大文件请用 `-mode resume` 分块发送 |
+| [`http3/upload`](http3/upload) | 同一套接口走 HTTP/3，由 QUIC 流控施加背压；请求 body 从磁盘流式发送，`-mode echo` 会把响应整个留在内存，大文件的 echo 请用 `-mode resume` 分块发送 |
 | [`http2only`](http2only) | 只说 HTTP/2 的 echo server（h2c，或加 `-tls` 走 h2），不以 HTTP/2 preface 开头的连接用 GOAWAY 结束；fib 的 CI 用 [h2spec](https://github.com/summerwind/h2spec) 测它 |
 
 上传示例的完整流程：

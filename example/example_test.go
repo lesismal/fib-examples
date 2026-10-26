@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,14 @@ func bindForTest(t *testing.T, network string) *fib.Engine {
 		t.Fatal(err)
 	}
 	return engine
+}
+
+func TestEngineConfigTurnsOffTheSettingsLog(t *testing.T) {
+	got, want := EngineConfig(), fib.DefaultConfig()
+	want.LogSettings = false
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("EngineConfig() = %+v, want %+v", got, want)
+	}
 }
 
 // Serve prints the banner with the address the engine got, reports that

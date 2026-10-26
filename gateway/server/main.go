@@ -170,7 +170,7 @@ func newEngines(gateway *proxy.Gateway, tlsConfig *tls.Config, addr, plainAddr s
 
 	// HTTPS: fibtls decrypts in front of the HTTP handler, which serves HTTP/2
 	// and HTTP/1.1 alike once ConfigureTLS has offered h2 through ALPN.
-	tcpConfig := fib.DefaultConfig()
+	tcpConfig := example.EngineConfig()
 	tcp, err := fib.New(tcpConfig, fib.Binding{Addr: addr, Handler: fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), fibhttp.NewHandlerWithConfig(httpConfig, handler))})
 	if err != nil {
 		return nil, err
@@ -181,7 +181,7 @@ func newEngines(gateway *proxy.Gateway, tlsConfig *tls.Config, addr, plainAddr s
 	// one got, which is addr's own unless that was 0.
 	host, _, _ := net.SplitHostPort(addr)
 	tcpAddr, _ := tcp.LocalAddr()
-	udpConfig := fib.DefaultConfig()
+	udpConfig := example.EngineConfig()
 	udpConfig.Network = "udp"
 	udp, err := fib.New(udpConfig, fib.Binding{Addr: net.JoinHostPort(host, strconv.Itoa(tcpAddr.Port)), Handler: http3.NewHandlerWithConfig(gateway.HTTP3Config(tlsConfig), handler)})
 	if err != nil {
@@ -191,7 +191,7 @@ func newEngines(gateway *proxy.Gateway, tlsConfig *tls.Config, addr, plainAddr s
 	engines = append(engines, udp)
 
 	if plainAddr != "" {
-		plainConfig := fib.DefaultConfig()
+		plainConfig := example.EngineConfig()
 		plain, err := fib.New(plainConfig, fib.Binding{Addr: plainAddr, Handler: fibhttp.NewHandlerWithConfig(httpConfig, handler)})
 		if err != nil {
 			closeAll(engines)

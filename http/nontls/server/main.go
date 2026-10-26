@@ -3,7 +3,8 @@
 // Command server is an HTTP echo server: it answers each request with its
 // method, path and body. With -dir it also serves that directory's files
 // under /files/, through net/http's FileServer, which gets Range and
-// conditional requests from net/http and sends each file by sendfile(2).
+// conditional requests from net/http and sends each file by sendfile(2), or
+// by TransmitFile on Windows.
 //
 //	go run ./http/nontls/server -dir .
 //	curl -O http://127.0.0.1:8080/files/go.mod
@@ -52,7 +53,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	if *dir != "" {
 		handler = withFiles(*dir, handler)
 	}
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	engine, err := fib.New(config, fib.Binding{Addr: *addr, Handler: fibhttp.NewHandler(handler)})
 	if err != nil {
 		return err

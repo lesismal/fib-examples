@@ -83,7 +83,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 		fmt.Fprintf(out, "connected: %s\n", c.Conn().RemoteAddr())
 	})
 
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	engine, err := fib.New(config, fib.Binding{Addr: *addr, Handler: server})
 	if err != nil {
 		return err

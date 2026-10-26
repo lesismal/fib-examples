@@ -17,6 +17,7 @@ import (
 	"time"
 
 	fib "github.com/lesismal/fib"
+	"github.com/lesismal/fib-examples/example"
 	fibhttp "github.com/lesismal/fib/http"
 	"github.com/lesismal/fib/http3"
 	fibtls "github.com/lesismal/fib/tls"
@@ -49,12 +50,12 @@ func NewEnginesFor(handler fibhttp.Handler, tlsConfig *tls.Config, addr, plainAd
 	httpConfig.StreamRequestBody = true
 	httpConfig.StreamRequestBodyThreshold = streamThreshold
 	httpConfig.MaxStreamedBodyBytes = 256 << 20
-	tcpConfig := fib.DefaultConfig()
+	tcpConfig := example.EngineConfig()
 	tcp, err := fib.New(tcpConfig, fib.Binding{Addr: addr, Handler: fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), fibhttp.NewHandlerWithConfig(httpConfig, handler))})
 	if err != nil {
 		return nil, err
 	}
-	udpConfig := fib.DefaultConfig()
+	udpConfig := example.EngineConfig()
 	udpConfig.Network = "udp"
 	h3Config := http3.DefaultConfig()
 	h3Config.TLSConfig = tlsConfig
@@ -69,7 +70,7 @@ func NewEnginesFor(handler fibhttp.Handler, tlsConfig *tls.Config, addr, plainAd
 	}
 	engines := []*fib.Engine{tcp, udp}
 	if plainAddr != "" {
-		plainConfig := fib.DefaultConfig()
+		plainConfig := example.EngineConfig()
 		plain, err := fib.New(plainConfig, fib.Binding{Addr: plainAddr, Handler: fibhttp.NewHandlerWithConfig(httpConfig, handler)})
 		if err != nil {
 			_ = udp.Close()

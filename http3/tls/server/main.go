@@ -70,7 +70,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	// one, whose handler is http3's; the http.Handler is the same kind the
 	// HTTP/1 and HTTP/2 servers take. HTTPS over TCP is the other, for
 	// clients that do not know yet that HTTP/3 is here.
-	engine, err := fib.New(fib.DefaultConfig(),
+	engine, err := fib.New(example.EngineConfig(),
 		fib.Binding{Network: "udp", Addr: *addr, Handler: http3.NewHandler(tlsConfig, handler)},
 		fib.Binding{Network: "tcp", Addr: *addr, Handler: fibtls.NewServer(fibhttp.ConfigureTLS(tlsConfig), fibhttp.NewHandler(handler))},
 	)

@@ -39,7 +39,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 		return err
 	}
 
-	config := fib.DefaultConfig()
+	config := example.EngineConfig()
 	config.UseWritev = *writev
 	engine, err := fib.New(config, fib.Binding{Addr: *addr, Handler: fib.HandlerFuncs{
 		// TCP is a byte stream: data is whatever arrived in one read, not
