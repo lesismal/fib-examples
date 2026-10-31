@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fib WebRTC echo</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4em; margin: 0 0 4px; }
+  p { margin: 0 0 12px; opacity: .8; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0; }
+  .videos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  figure { margin: 0; }
+  video { width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 6px; }
+  figcaption { font-size: .85em; opacity: .7; }
+  form { display: flex; gap: 8px; }
+  form input { flex: 1; min-width: 0; padding: 6px 8px; font: inherit; }
+  button { padding: 6px 14px; font: inherit; }
+  pre { border: 1px solid var(--line); border-radius: 6px; padding: 8px; height: 220px; overflow: auto; margin: 12px 0 0; font-size: 13px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>fib WebRTC echo</h1>
+<p>A data channel the server echoes, and your camera sent to the server and back, over a PeerConnection the server answers on its shared UDP port.</p>
+
+<div class="row">
+  <label><input type="checkbox" id="camera" checked> Send my camera</label>
+  <label title="Needs the server to run with -turn"><input type="checkbox" id="relay" disabled> Relay through TURN only</label>
+  <button id="start">Start</button>
+  <button id="stop" disabled>Stop</button>
+</div>
+
+<div class="videos">
+  <figure><video id="local" autoplay playsinline muted></video><figcaption>Local camera</figcaption></figure>
+  <figure><video id="remote" autoplay playsinline muted></video><figcaption>Back from the server</figcaption></figure>
+</div>
+
+<form id="send" class="row">
+  <input id="text" placeholder="A message for the data channel" autocomplete="off" disabled>
+  <button id="sendButton" disabled>Send</button>
+</form>
+
+<pre id="log"></pre>
+
+<script>
+const $ = id => document.getElementById(id);
+let pc, dc, stream, session, iceServers = [];
+
+function log(msg) {
+  const el = $('log');
+  el.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function canSend(on) {
+  $('text').disabled = $('sendButton').disabled = !on;
+}
+
+// The server hands out its TURN server, with credentials, when it runs one.
+fetch('ice').then(r => r.json()).then(cfg => {
+  iceServers = cfg.iceServers || [];
+  if (iceServers.length) {
+    $('relay').disabled = false;
+    log(`TURN server: ${iceServers[0].urls.join(' ')}`);
+  }
+}).catch(e => log(`GET /ice: ${e}`));
+
+// WHIP signaling sends the whole offer, candidates included, so wait for
+// them; a few seconds is plenty for host and relay candidates.
+function gathered(pc) {
+  return new Promise(resolve => {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    const timer = setTimeout(resolve, 3000);
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+    });
+  });
+}
+
+async function start() {
+  $('start').disabled = true;
+  $('stop').disabled = false;
+  try {
+    const relay = $('relay').checked;
+    pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: relay ? 'relay' : 'all' });
+    pc.onconnectionstatechange = () => log(`connection ${pc.connectionState}`);
+    pc.oniceconnectionstatechange = () => log(`ICE ${pc.iceConnectionState}`);
+
+    dc = pc.createDataChannel('echo');
+    dc.onopen = () => { log('data channel open'); canSend(true); $('text').focus(); };
+    dc.onclose = () => { log('data channel closed'); canSend(false); };
+    dc.onmessage = e => log(`echo: ${e.data}`);
+
+    if ($('camera').checked) {
+      try {
+        // No mediaDevices at all on a page that is not a secure origin.
+        if (!navigator.mediaDevices) throw new Error('the camera needs https or localhost');
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        $('local').srcObject = stream;
+        // sendrecv: the server answers with a track of its own, the
+        // loopback, in the same media section.
+        for (const track of stream.getVideoTracks()) {
+          pc.addTransceiver(track, { direction: 'sendrecv', streams: [stream] });
+        }
+        pc.ontrack = e => {
+          log(`receiving ${e.track.kind} from the server`);
+          $('remote').srcObject = new MediaStream([e.track]);
+        };
+      } catch (e) {
+        log(`no camera (${e.message}); data channel only`);
+      }
+    }
+
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc);
+    const res = await fetch('whip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+    if (res.status !== 201) throw new Error(`POST /whip: ${res.status} ${await res.text()}`);
+    session = new URL(res.headers.get('Location'), location.href);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+    log(`answered, session ${session.pathname}${relay ? ', relayed through TURN' : ''}`);
+  } catch (e) {
+    log(`error: ${e.message}`);
+    stop();
+  }
+}
+
+function stop() {
+  if (session) {
+    fetch(session, { method: 'DELETE' }).catch(() => {});
+    log(`DELETE ${session.pathname}`);
+  }
+  if (pc) pc.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  pc = dc = stream = session = null;
+  $('local').srcObject = $('remote').srcObject = null;
+  canSend(false);
+  $('start').disabled = false;
+  $('stop').disabled = true;
+}
+
+$('start').onclick = start;
+$('stop').onclick = stop;
+$('send').onsubmit = e => {
+  e.preventDefault();
+  const text = $('text').value;
+  if (!text || !dc || dc.readyState !== 'open') return;
+  dc.send(text);
+  log(`sent: ${text}`);
+  $('text').value = '';
+};
+</script>
+</body>
+</html>

@@ -6,8 +6,8 @@
 [中文](README.zh-CN.md)
 
 Runnable examples for [fib](https://github.com/lesismal/fib), the event-driven network library for Go:
-raw TCP and UDP, HTTP/1.1, HTTP/2 and HTTP/3, WebSocket, gRPC, arpc, SOCKS, several protocols on one
-port, large uploads, and a reverse proxy / gateway. Every example is a small program with a test that
+raw TCP and UDP, DTLS, HTTP/1.1, HTTP/2 and HTTP/3, WebSocket, WebRTC, gRPC, arpc, SOCKS, several protocols on
+one port, large uploads, and a reverse proxy / gateway. Every example is a small program with a test that
 runs it, and the module depends on fib the way any application would.
 
 ## Running them
@@ -31,14 +31,14 @@ the list.
 
 ### Echo servers, one per protocol
 
-Each protocol has a directory, split into `nontls` and `tls` (UDP has only `nontls`, since fib has no
-DTLS; HTTP/3 has only `tls`, since QUIC is always encrypted), each with a `server` and a `client`:
+Each protocol has a directory, split into `nontls` and `tls` (UDP's encrypted twin is DTLS, in `tls/dtls`; HTTP/3 has only `tls`, since QUIC is always encrypted), each with a `server` and a `client`:
 
 | Directory | What it shows | Default address |
 |-----------|---------------|-----------------|
 | [`tcp/nontls`](tcp/nontls) | a raw TCP echo | `127.0.0.1:9000` |
 | [`tcp/tls`](tcp/tls) | the same over TLS, with `fibtls.NewServer` and `fibtls.Dial` | `127.0.0.1:9443` |
 | [`udp/nontls`](udp/nontls) | a UDP echo | `127.0.0.1:9001` |
+| [`tls/dtls`](tls/dtls) | a DTLS 1.2 echo on UDP bindings with fib's sans-IO `DTLSConn`: self-signed certificates checked by fingerprint, an SRTP profile and the keying material both ends export; the client speaks first through `Engine.OpenUDPPeer` | `127.0.0.1:4444` |
 | [`http/nontls`](http/nontls) | an HTTP/1.1 echo; `-dir` also serves a directory under `/files/` through `net/http`'s `FileServer` (Range, conditional requests, sendfile) | `127.0.0.1:8080` |
 | [`http/tls`](http/tls) | HTTPS, with HTTP/2 or HTTP/1.1 by ALPN; the client's `-http1` stays on HTTP/1.1 | `127.0.0.1:8443` |
 | [`http3/tls`](http3/tls) | HTTP/3 over UDP, and HTTPS on the TCP port of the same number, whose responses carry `Alt-Svc` | `127.0.0.1:8445` |
@@ -86,6 +86,9 @@ the client logic ([`http/upload/uploadclient`](http/upload/uploadclient)): the b
 | [`multiproto`](multiproto) | package `multiproto` on one port (`:9000`): HTTPS (HTTP/1.1 and HTTP/2), HTTP/1.1, h2c, WebSocket, gRPC, SOCKS5/4/4a, an HTTP CONNECT proxy, arpc and a TCP echo; its client speaks every one of them, and the server's doc comment lists a curl or client command for each |
 | [`socks`](socks) | a SOCKS5 (with UDP ASSOCIATE), SOCKS4 and SOCKS4a proxy and an HTTP CONNECT proxy on one port (`:1080`); `-user`/`-pass` require authentication, and the client fetches a URL through it |
 
+[`udp/openpeer`](udp/openpeer) shows `Engine.OpenUDPPeer` on its own: a UDP binding that speaks first to an
+address and hears the reply on the same port and connection.
+
 ### Gateway
 
 [`gateway`](gateway) is a reverse proxy that accepts HTTP/1.1, HTTP/2, HTTP/3 and WebSocket and forwards
@@ -93,6 +96,24 @@ by path prefix to `http://`, `https://` (HTTP/2 by ALPN) or `h3://` upstreams, w
 engine worker: request bodies, upstream requests, upstream response bodies, WebSocket dials and messages
 are all callbacks. Run `gateway/upstream`, `gateway/server` and `gateway/client` in that order; see its
 [README](gateway/README.md) for the design, the trade-offs and the tests.
+
+### WebRTC
+
+fib's WebRTC stack (see fib's [WebRTC document](https://github.com/lesismal/fib/blob/main/docs/webrtc.md)) from a browser
+page down to the protocols under it. The browser examples listen on `:8080`, TCP for the page and UDP for every
+PeerConnection, and work on `localhost` as they are; `-public-ip` advertises another address, and `-tls` serves the
+page over HTTPS, which browsers require for the camera anywhere but `localhost`.
+
+| Directory | What it shows |
+|-----------|---------------|
+| [`webrtc`](webrtc) | open `http://localhost:8080`: a data channel the server echoes, and the camera sent to the server and back RTP packet by RTP packet (or the data channel alone, with no camera). The page POSTs its offer as WHIP does, and the server answers with an ICE-lite PeerConnection on a shared `webrtc.Mux`; `-turn :3478` also runs a TURN server on the engine and hands the page ephemeral credentials from `/ice` |
+| [`webrtc/sfu`](webrtc/sfu) | one browser publishes its camera and microphone (WHIP), any number watch (WHEP); the server forwards RTP to every viewer through one `TrackLocal` per kind and passes their PLIs to the publisher |
+| [`webrtc/datachannel`](webrtc/datachannel) | two Go PeerConnections, no browser: a server on a Mux answering over fib/http, a client on a port of its own, and messages on reliable, unordered and partially reliable channels; `-turn` relays everything through a TURN server |
+| [`webrtc/media`](webrtc/media) | Go to Go RTP: synthetic VP8 and Opus written to `TrackLocal`s, received through `OnTrack` and counted per SSRC, and a PLI that reaches the sender's `OnKeyFrameRequest` |
+| [`webrtc/turnserver`](webrtc/turnserver) | a standalone TURN server (`webrtc/turn/turnserver`): fixed users or an ephemeral-credential secret, relay port range, public IP and the peers it may relay to; it prints an `RTCIceServer` for a page |
+| [`webrtc/stun`](webrtc/stun) | a STUN server answering Binding, and a client that asks one (`stun.l.google.com:19302` by default) for its server-reflexive address, with `Engine.OpenUDPPeer` and a `stun.Transaction` |
+
+`webrtc/whip` is the WHIP/WHEP signaling the browser examples and `webrtc/datachannel` share.
 
 ## TLS certificates
 
@@ -113,7 +134,8 @@ How TLS is added differs by protocol: TCP, HTTP and WebSocket servers wrap their
 fib-examples/
 ├── example/       the plumbing every example shares (start, serve until Ctrl-C, stop), so each shows only its protocol
 ├── certs/         self-signed certificates for the TLS examples
-├── tcp/ udp/ http/ http2/ http2only/ http3/ websocket/
+├── tcp/ udp/ tls/ http/ http2/ http2only/ http3/ websocket/
+├── webrtc/
 ├── arpc/ grpc/
 ├── multiprotocol/ multiproto/ socks/
 └── gateway/

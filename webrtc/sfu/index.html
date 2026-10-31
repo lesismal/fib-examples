@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fib SFU</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4em; margin: 0 0 4px; }
+  p { margin: 0 0 12px; opacity: .8; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0; }
+  video { width: 100%; max-width: 640px; aspect-ratio: 4 / 3; background: #000; border-radius: 6px; display: block; }
+  button { padding: 6px 14px; font: inherit; }
+  pre { border: 1px solid var(--line); border-radius: 6px; padding: 8px; height: 200px; overflow: auto; margin: 12px 0 0; font-size: 13px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>fib SFU</h1>
+<p>Publish your camera and microphone from one tab, and watch them from as many others as you like. The server forwards the RTP packets and never decodes them.</p>
+
+<div class="row">
+  <button id="publish">Publish</button>
+  <button id="watch">Watch</button>
+  <button id="stop" disabled>Stop</button>
+</div>
+
+<video id="video" autoplay playsinline controls></video>
+<pre id="log"></pre>
+
+<script>
+const $ = id => document.getElementById(id);
+let pc, stream, session;
+
+function log(msg) {
+  const el = $('log');
+  el.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function gathered(pc) {
+  return new Promise(resolve => {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    const timer = setTimeout(resolve, 3000);
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+    });
+  });
+}
+
+// connect offers what setup put on a new RTCPeerConnection to endpoint,
+// /whip or /whep, and sets the answer.
+async function connect(endpoint, setup) {
+  $('publish').disabled = $('watch').disabled = true;
+  $('stop').disabled = false;
+  try {
+    pc = new RTCPeerConnection();
+    pc.onconnectionstatechange = () => log(`connection ${pc.connectionState}`);
+    await setup(pc);
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc);
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+    if (res.status !== 201) throw new Error(`POST ${endpoint}: ${res.status} ${await res.text()}`);
+    session = new URL(res.headers.get('Location'), location.href);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+    log(`answered, session ${session.pathname}`);
+  } catch (e) {
+    log(`error: ${e.message}`);
+    stop();
+  }
+}
+
+$('publish').onclick = () => connect('whip', async pc => {
+  if (!navigator.mediaDevices) throw new Error('the camera needs https or localhost');
+  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  $('video').srcObject = stream;
+  $('video').muted = true; // no echo of your own microphone
+  for (const track of stream.getTracks()) {
+    pc.addTransceiver(track, { direction: 'sendonly', streams: [stream] });
+  }
+  log('publishing');
+});
+
+$('watch').onclick = () => connect('whep', async pc => {
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+  const remote = new MediaStream();
+  pc.ontrack = e => { remote.addTrack(e.track); log(`receiving ${e.track.kind}`); };
+  $('video').srcObject = remote;
+  $('video').muted = false;
+  log('watching; the picture starts once someone publishes');
+});
+
+function stop() {
+  if (session) {
+    fetch(session, { method: 'DELETE' }).catch(() => {});
+    log(`DELETE ${session.pathname}`);
+  }
+  if (pc) pc.close();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  pc = stream = session = null;
+  $('video').srcObject = null;
+  $('publish').disabled = $('watch').disabled = false;
+  $('stop').disabled = true;
+}
+$('stop').onclick = stop;
+</script>
+</body>
+</html>

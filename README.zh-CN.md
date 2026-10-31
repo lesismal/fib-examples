@@ -5,8 +5,8 @@
 
 [English](README.md)
 
-[fib](https://github.com/lesismal/fib)（Go 的事件驱动网络库）的可运行示例：裸 TCP 与 UDP、HTTP/1.1、
-HTTP/2 与 HTTP/3、WebSocket、gRPC、arpc、SOCKS、同一端口上的多种协议、大文件上传，以及一个反向代理 / 网关。
+[fib](https://github.com/lesismal/fib)（Go 的事件驱动网络库）的可运行示例：裸 TCP 与 UDP、DTLS、HTTP/1.1、
+HTTP/2 与 HTTP/3、WebSocket、WebRTC、gRPC、arpc、SOCKS、同一端口上的多种协议、大文件上传，以及一个反向代理 / 网关。
 每个示例都是一个小程序，并配有运行它的测试；本模块像普通应用一样依赖 fib。
 
 ## 运行
@@ -28,7 +28,7 @@ go run ./tcp/nontls/client     # 另一个终端
 
 ### 各协议的 echo server
 
-每种协议一个目录，分为 `nontls` 与 `tls` 两个子目录（UDP 只有 `nontls`：fib 不内置 DTLS；HTTP/3 只有
+每种协议一个目录，分为 `nontls` 与 `tls` 两个子目录（UDP 的加密版本是 DTLS，在 `tls/dtls` 中；HTTP/3 只有
 `tls`：QUIC 总是加密的），各有一个 `server` 和一个 `client`：
 
 | 目录 | 演示内容 | 默认地址 |
@@ -36,6 +36,7 @@ go run ./tcp/nontls/client     # 另一个终端
 | [`tcp/nontls`](tcp/nontls) | 裸 TCP echo | `127.0.0.1:9000` |
 | [`tcp/tls`](tcp/tls) | 同上，走 TLS：`fibtls.NewServer` 与 `fibtls.Dial` | `127.0.0.1:9443` |
 | [`udp/nontls`](udp/nontls) | UDP echo | `127.0.0.1:9001` |
+| [`tls/dtls`](tls/dtls) | UDP binding 上的 DTLS 1.2 echo，使用 fib 的 sans-IO `DTLSConn`：自签名证书按 fingerprint 校验，协商 SRTP profile 并打印两端导出的相同密钥材料；client 经 `Engine.OpenUDPPeer` 先开口 | `127.0.0.1:4444` |
 | [`http/nontls`](http/nontls) | HTTP/1.1 echo；`-dir` 另用 `net/http` 的 `FileServer` 在 `/files/` 下提供该目录的文件（Range、条件请求、sendfile） | `127.0.0.1:8080` |
 | [`http/tls`](http/tls) | HTTPS，按 ALPN 走 HTTP/2 或 HTTP/1.1；client 的 `-http1` 固定用 HTTP/1.1 | `127.0.0.1:8443` |
 | [`http3/tls`](http3/tls) | UDP 上的 HTTP/3，同端口号的 TCP 上提供 HTTPS，响应带 `Alt-Svc` | `127.0.0.1:8445` |
@@ -82,12 +83,32 @@ go run ./http/upload/client -mode resume -file /tmp/big.bin -name part.bin   # �
 | [`multiproto`](multiproto) | 用 `multiproto` 包在一个端口（`:9000`）上提供 HTTPS（HTTP/1.1 与 HTTP/2）、HTTP/1.1、h2c、WebSocket、gRPC、SOCKS5/4/4a、HTTP CONNECT 代理、arpc 与 TCP echo；它的 client 会逐一使用这些协议，server 的文件头注释列出了每种协议对应的 curl 或客户端命令 |
 | [`socks`](socks) | 同一端口（`:1080`）上的 SOCKS5（含 UDP ASSOCIATE）、SOCKS4、SOCKS4a 与 HTTP CONNECT 代理；`-user`/`-pass` 开启认证，client 经它抓取一个 URL |
 
+[`udp/openpeer`](udp/openpeer) 单独演示 `Engine.OpenUDPPeer`：UDP binding 主动向某个地址发送，并在同一个端口、
+同一个连接上收到回复。
+
 ### 网关
 
 [`gateway`](gateway) 是一个反向代理：下游接 HTTP/1.1、HTTP/2、HTTP/3 和 WebSocket，按路径前缀转发到
 `http://`、`https://`（ALPN 选 HTTP/2）或 `h3://` 上游，全程不阻塞引擎的 worker：请求 body、上游请求、
 上游响应 body、WebSocket 拨号与消息都是回调。依次运行 `gateway/upstream`、`gateway/server`、`gateway/client`；
 设计、取舍与测试见它的 [README](gateway/README.zh-CN.md)。
+
+### WebRTC
+
+fib 的 WebRTC 实现（见 fib 的 [WebRTC 文档](https://github.com/lesismal/fib/blob/main/docs/webrtc.zh-CN.md)），从浏览器
+页面一直到下面的各层协议。浏览器示例监听 `:8080`：TCP 提供页面，UDP 供所有 PeerConnection 共用，在 `localhost` 上
+直接可用；`-public-ip` 公布其它地址，`-tls` 用 HTTPS 提供页面（除 `localhost` 外，浏览器只在 HTTPS 下开放摄像头）。
+
+| 目录 | 演示内容 |
+|------|----------|
+| [`webrtc`](webrtc) | 打开 `http://localhost:8080`：服务端回显的 data channel，以及摄像头画面发到服务端、再逐个 RTP 包送回（没有摄像头时只用 data channel）。页面像 WHIP 那样 POST 自己的 offer，服务端在共用的 `webrtc.Mux` 上用 ICE-lite PeerConnection 应答；`-turn :3478` 还会在同一个 engine 上运行 TURN 服务器，并通过 `/ice` 给页面发放限时凭据 |
+| [`webrtc/sfu`](webrtc/sfu) | 一个浏览器发布摄像头和麦克风（WHIP），任意多个观看（WHEP）；服务端用每种媒体一个 `TrackLocal` 把 RTP 转发给所有观看者，并把他们的 PLI 转交发布者 |
+| [`webrtc/datachannel`](webrtc/datachannel) | 两个 Go PeerConnection，不用浏览器：Mux 上的服务端经 fib/http 应答，客户端用自己的端口，在可靠、无序、部分可靠三种 channel 上收发消息；`-turn` 让所有流量经 TURN 中转 |
+| [`webrtc/media`](webrtc/media) | Go 到 Go 的 RTP：合成的 VP8、Opus 包写入 `TrackLocal`，经 `OnTrack` 接收并按 SSRC 统计，再发一个 PLI，发送端在 `OnKeyFrameRequest` 中收到 |
+| [`webrtc/turnserver`](webrtc/turnserver) | 独立的 TURN 服务器（`webrtc/turn/turnserver`）：固定用户或限时凭据的 secret、中继端口范围、公网 IP、允许中继到的对端；启动时打印一个可给页面用的 `RTCIceServer` |
+| [`webrtc/stun`](webrtc/stun) | 应答 Binding 的 STUN 服务端，以及向 STUN 服务器（默认 `stun.l.google.com:19302`）查询自己 server-reflexive 地址的客户端，用到 `Engine.OpenUDPPeer` 和 `stun.Transaction` |
+
+`webrtc/whip` 是浏览器示例和 `webrtc/datachannel` 共用的 WHIP/WHEP 信令。
 
 ## TLS 证书
 
@@ -105,7 +126,8 @@ server 把 TLS 配置直接交给 `http3.NewHandler`，client 设置 `http3.Clie
 fib-examples/
 ├── example/       所有示例共用的启动、运行到 Ctrl-C、停止等代码，让每个示例只展示自己的协议
 ├── certs/         TLS 示例用的自签名证书
-├── tcp/ udp/ http/ http2/ http2only/ http3/ websocket/
+├── tcp/ udp/ tls/ http/ http2/ http2only/ http3/ websocket/
+├── webrtc/
 ├── arpc/ grpc/
 ├── multiprotocol/ multiproto/ socks/
 └── gateway/
