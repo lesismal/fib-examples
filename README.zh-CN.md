@@ -111,6 +111,7 @@ go run ./http/upload/client -mode resume -file /tmp/big.bin -name part.bin   # �
 |------|----------|
 | [`tcp/limits`](tcp/limits) | `Config.MaxConns` 拒绝超出的连接（`Stats.ConnsRefused`），`MaxWriteQueueBytes` 与 `SetWriteQueueLimit` 关闭不读数据的对端（`ErrSendQueueFull`），`PollBatchSize`，以及 `Engine.Settings` / `LogSettings` |
 | [`tcp/proxyprotocol`](tcp/proxyprotocol) | 用单独的 handler 读 PROXY protocol v1 头，`Connection.SetRemoteAddrPort`，再用 `SetHandler` 把连接交给 HTTP，后者看到的是负载均衡器后面的真实客户端地址 |
+| [`tcp/dialfrom`](tcp/dialfrom) | `Engine.DialWith` 从指定的本地地址和端口范围拨出（`DialOptions.LocalAddr`、`PortMin`/`PortMax`），TCP 或 UDP（`-network`），用于防火墙只放行少数源端口的中继；范围内端口全被占用时以 `ErrNoLocalPort` 失败 |
 | [`tcp/prefork`](tcp/prefork) | `prefork` 包多进程服务，`BalanceReusePort` 用 eBPF 轮询分配新连接；`-dial` 统计各进程接到的连接。prefork 与均衡器都需要 Linux（均衡器还需要 CAP_BPF 和 bpffs），其他系统上由单个进程服务 |
 | [`udp/peers`](udp/peers) | `Connection.SetUDPIdleTimeout`：每个 UDP 对端各自的超时（短的、引擎默认的、不超时），以及监听 socket 上的 `SetDontFragment` |
 

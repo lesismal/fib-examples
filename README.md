@@ -115,6 +115,7 @@ address and hears the reply on the same port and connection.
 |-----------|---------------|
 | [`tcp/limits`](tcp/limits) | `Config.MaxConns` refusing connections past it (`Stats.ConnsRefused`), `MaxWriteQueueBytes` and `SetWriteQueueLimit` closing a peer that reads none of a flood (`ErrSendQueueFull`), `PollBatchSize`, and `Engine.Settings` / `LogSettings` |
 | [`tcp/proxyprotocol`](tcp/proxyprotocol) | a PROXY protocol v1 header read by a handler of its own, `Connection.SetRemoteAddrPort`, and `SetHandler` handing the connection to HTTP, which then sees the client behind a load balancer |
+| [`tcp/dialfrom`](tcp/dialfrom) | `Engine.DialWith` from a chosen local address and port range (`DialOptions.LocalAddr`, `PortMin`/`PortMax`), over TCP or UDP (`-network`), as a relay behind a firewall that admits a few source ports must; a range whose ports are all in use fails with `ErrNoLocalPort` |
 | [`tcp/prefork`](tcp/prefork) | package `prefork` serving from several processes, and `BalanceReusePort` spreading connections round-robin with eBPF; `-dial` counts who answered. Prefork and the balancer need Linux (the balancer also CAP_BPF and bpffs); elsewhere one process serves |
 | [`udp/peers`](udp/peers) | `Connection.SetUDPIdleTimeout`, a timeout per UDP peer (short, the engine's, or none), and `SetDontFragment` on the listener's socket |
 
