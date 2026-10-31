@@ -5,8 +5,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
+	"net"
+	"net/netip"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +18,7 @@ import (
 
 	"github.com/lesismal/fib-examples/example"
 	"github.com/lesismal/fib/webrtc"
+	"github.com/lesismal/fib/webrtc/turn"
 )
 
 const waitTimeout = 20 * time.Second
@@ -144,6 +149,95 @@ func TestStaticUsers(t *testing.T) {
 	relayed(t, s)
 }
 
+// allocateOverStream allocates through the server at url, a turn: or turns:
+// URL with ?transport=tcp, as alice, and returns the relayed address.
+func allocateOverStream(t *testing.T, url string) netip.AddrPort {
+	t.Helper()
+	scheme, rest, _ := strings.Cut(url, ":")
+	hostport, _, _ := strings.Cut(rest, "?")
+	server, err := netip.ParseAddrPort(hostport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conn net.Conn
+	if scheme == "turns" {
+		// The server's certificate is self-signed.
+		conn, err = tls.Dial("tcp", hostport, &tls.Config{InsecureSkipVerify: true})
+	} else {
+		conn, err = net.Dial("tcp", hostport)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var mu sync.Mutex
+	allocated, failed := make(chan netip.AddrPort, 1), make(chan error, 1)
+	c, err := turn.NewClient(turn.ClientConfig{
+		Server: server, Username: "alice", Password: "pw1", Stream: true,
+		Send:        func(_ netip.AddrPort, b []byte) { _, _ = conn.Write(b) },
+		OnAllocated: func(relayed, _ netip.AddrPort) { allocated <- relayed },
+		OnFailed:    func(err error) { failed <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What the stream brings is framed into STUN messages by turn.FrameLen.
+	go func() {
+		var buf []byte
+		chunk := make([]byte, 4096)
+		for {
+			n, err := conn.Read(chunk)
+			if err != nil {
+				return
+			}
+			buf = append(buf, chunk[:n]...)
+			for {
+				n, err := turn.FrameLen(buf)
+				if err != nil || n == 0 || n > len(buf) {
+					break
+				}
+				mu.Lock()
+				c.HandlePacket(server, buf[:n], time.Now())
+				mu.Unlock()
+				buf = buf[n:]
+			}
+		}
+	}()
+	mu.Lock()
+	err = c.Allocate(time.Now())
+	mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case relayed := <-allocated:
+		return relayed
+	case err := <-failed:
+		t.Fatalf("%s: %v", url, err)
+	case <-time.After(waitTimeout):
+		t.Fatalf("%s: no allocation", url)
+	}
+	return netip.AddrPort{}
+}
+
+// -tcp and -tls add TURN over TCP and TLS, advertised in the RTCIceServer,
+// and a client allocates over each.
+func TestStreamTransports(t *testing.T) {
+	s := start(t, "-users", "alice=pw1", "-tcp", "127.0.0.1:0", "-tls", "127.0.0.1:0",
+		"-cert-out", filepath.Join(t.TempDir(), "cert.pem"))
+	if len(s.URLs) != 3 || !strings.HasPrefix(s.URLs[1], "turn:127.0.0.1:") || !strings.HasPrefix(s.URLs[2], "turns:127.0.0.1:") {
+		t.Fatalf("%+v", s)
+	}
+	for _, url := range s.URLs[1:] {
+		if !strings.HasSuffix(url, "?transport=tcp") {
+			t.Fatalf("%s: no ?transport=tcp", url)
+		}
+		if relayed := allocateOverStream(t, url); relayed.Addr() != netip.MustParseAddr("127.0.0.1") {
+			t.Fatalf("%s: relayed %v", url, relayed)
+		}
+	}
+}
+
 func TestRunErrors(t *testing.T) {
 	for _, args := range [][]string{
 		{"-nope"},
@@ -155,6 +249,8 @@ func TestRunErrors(t *testing.T) {
 		{"-users", "a=b", "-allow", "10.0.0.0"},
 		{"-users", "a=b", "-relay-ip", "0.0.0.0"},
 		{"-users", "a=b", "-relay-ip", "127.0.0.1", "-addr", "127.0.0.1:99999"},
+		{"-users", "a=b", "-relay-ip", "127.0.0.1", "-addr", "127.0.0.1:0", "-tcp", "127.0.0.1:99999"},
+		{"-users", "a=b", "-relay-ip", "127.0.0.1", "-addr", "127.0.0.1:0", "-tls", "127.0.0.1:0", "-cert", "/nonexistent.pem"},
 	} {
 		if err := run(context.Background(), args, io.Discard, nil); err == nil {
 			t.Errorf("%q: started", args)

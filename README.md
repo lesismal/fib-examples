@@ -140,7 +140,7 @@ page over HTTPS, which browsers require for the camera anywhere but `localhost`.
 | [`webrtc/sfu`](webrtc/sfu) | one browser publishes its camera and microphone (WHIP), any number watch (WHEP); the server forwards RTP to every viewer through one `TrackLocal` per kind and passes their PLIs to the publisher |
 | [`webrtc/datachannel`](webrtc/datachannel) | two Go PeerConnections, no browser: a server on a Mux answering over fib/http, a client on a port of its own, and messages on reliable, unordered and partially reliable channels; `-turn` relays everything through a TURN server |
 | [`webrtc/media`](webrtc/media) | Go to Go RTP: synthetic VP8 and Opus written to `TrackLocal`s, received through `OnTrack` and counted per SSRC, and a PLI that reaches the sender's `OnKeyFrameRequest` |
-| [`webrtc/turnserver`](webrtc/turnserver) | a standalone TURN server (`webrtc/turn/turnserver`): fixed users or an ephemeral-credential secret, relay port range, public IP and the peers it may relay to; it prints an `RTCIceServer` for a page |
+| [`webrtc/turnserver`](webrtc/turnserver) | a standalone TURN server (`webrtc/turn/turnserver`) over UDP, and over TCP and TLS with `-tcp` / `-tls` (`ListenTCP`, `ListenTLS`): fixed users or an ephemeral-credential secret, relay port range, public IP and the peers it may relay to; it prints an `RTCIceServer` for a page |
 | [`webrtc/stun`](webrtc/stun) | a STUN server answering Binding, and a client that asks one (`stun.l.google.com:19302` by default) for its server-reflexive address, with `Engine.OpenUDPPeer` and a `stun.Transaction` |
 
 `webrtc/whip` is the WHIP/WHEP signaling the browser examples and `webrtc/datachannel` share.

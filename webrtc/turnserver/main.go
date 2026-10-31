@@ -1,16 +1,23 @@
 //go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd || windows
 
-// Command turnserver is a standalone TURN server (RFC 8656, UDP) on a fib
+// Command turnserver is a standalone TURN server (RFC 8656) on a fib
 // engine, for browsers and other WebRTC peers that cannot reach each other
 // directly.
 //
 //	go run ./webrtc/turnserver -users alice=secret
 //	go run ./webrtc/turnserver -secret "$(openssl rand -hex 32)" -public-ip 203.0.113.7 -ports 49152-65535
+//	go run ./webrtc/turnserver -users alice=secret -tcp :3478 -tls :5349 -cert cert.pem -key key.pem
 //
 // It prints an RTCIceServer a page can use. -users takes fixed users;
 // -secret accepts the time-limited credentials of the TURN REST API scheme,
 // "<expiry>:<user>" with an HMAC of it as the password, which a web service
 // sharing the secret hands out (turn.EphemeralCredentials); both may be set.
+//
+// Clients reach it over UDP at -addr, and, with -tcp and -tls, over TCP and
+// TLS (Server.ListenTCP and ListenTLS), for the networks that let only those
+// through; each such connection is one client, whose allocation ends when
+// it closes. Without -cert, -tls serves a self-signed certificate, which a
+// browser will not trust.
 //
 // Every allocation's relayed address is a UDP binding of its own on the
 // engine, bound to -relay-ip, on a port in -ports or one the kernel picks.
@@ -40,6 +47,7 @@ import (
 	"time"
 
 	fib "github.com/lesismal/fib"
+	"github.com/lesismal/fib-examples/certs"
 	"github.com/lesismal/fib-examples/example"
 	"github.com/lesismal/fib/webrtc/ice"
 	"github.com/lesismal/fib/webrtc/turn"
@@ -63,6 +71,9 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	flags := flag.NewFlagSet("turnserver", flag.ContinueOnError)
 	flags.SetOutput(out)
 	addr := flags.String("addr", ":3478", "listen address (UDP)")
+	tcpAddr := flags.String("tcp", "", "listen address for TURN over TCP; none when empty")
+	tlsAddr := flags.String("tls", "", "listen address for TURN over TLS; none when empty")
+	certFlags := certs.ServerFlagsOn(flags)
 	realm := flags.String("realm", "fib-examples", "realm of the long-term credentials")
 	users := flags.String("users", "", "fixed users, user=password,...")
 	secret := flags.String("secret", "", "secret of ephemeral credentials (TURN REST API)")
@@ -137,10 +148,53 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	if cfg.PublicIP.IsValid() {
 		host = cfg.PublicIP
 	}
-	url := "turn:" + net.JoinHostPort(host.String(), strconv.Itoa(local.Port))
+	url := func(scheme string, port int, query string) string {
+		return scheme + ":" + net.JoinHostPort(host.String(), strconv.Itoa(port)) + query
+	}
+	urls := []string{url("turn", local.Port, "")}
+	listening := fmt.Sprintf("%s (UDP)", local)
+	// TCP and TLS are bindings the Server adds to its engine, each
+	// connection one client.
+	for _, l := range []struct {
+		addr, name, scheme string
+		listen             func(string) (int, error)
+	}{
+		{*tcpAddr, "TCP", "turn", server.ListenTCP},
+		{*tlsAddr, "TLS", "turns", func(addr string) (int, error) {
+			config, err := certFlags.Config()
+			if err != nil {
+				return -1, err
+			}
+			return server.ListenTLS(addr, config)
+		}},
+	} {
+		if l.addr == "" {
+			continue
+		}
+		i, err := l.listen(l.addr)
+		if err != nil {
+			_ = engine.Close()
+			return fmt.Errorf("-%s: %w", strings.ToLower(l.name), err)
+		}
+		addrs, err := engine.BindingAddrs(i)
+		if err != nil {
+			_ = engine.Close()
+			return err
+		}
+		at := addrs[0].(*net.TCPAddr)
+		urls = append(urls, url(l.scheme, at.Port, "?transport=tcp"))
+		listening += fmt.Sprintf(", %s (%s)", at, l.name)
+	}
 	fmt.Fprintf(out, "relaying from %s, ports %s; an RTCIceServer for a page:\n", cfg.RelayIP, portRange(cfg))
-	fmt.Fprintln(out, iceServer(url, static, []byte(*secret)))
-	return example.Serve(ctx, out, ready, "TURN server listening on %s (UDP)", engine)
+	fmt.Fprintln(out, iceServer(urls, static, []byte(*secret)))
+
+	stop := example.Start(engine)
+	fmt.Fprintf(out, "TURN server listening on %s\n", listening)
+	if ready != nil {
+		ready(local.String())
+	}
+	<-ctx.Done()
+	return stop()
 }
 
 // auth looks a user up among the fixed ones, then as ephemeral credentials.
@@ -168,14 +222,14 @@ func auth(realm string, static map[string]string, secret []byte) turn.AuthFunc {
 	}
 }
 
-// iceServer is the RTCIceServer JSON for url: with ephemeral credentials
+// iceServer is the RTCIceServer JSON for urls: with ephemeral credentials
 // valid for an hour when there is a secret, else the first fixed user's.
-func iceServer(url string, static map[string]string, secret []byte) string {
+func iceServer(urls []string, static map[string]string, secret []byte) string {
 	s := struct {
 		URLs       []string `json:"urls"`
 		Username   string   `json:"username"`
 		Credential string   `json:"credential"`
-	}{URLs: []string{url}}
+	}{URLs: urls}
 	if len(secret) > 0 {
 		s.Username, s.Credential = turn.EphemeralCredentials(secret, "browser", time.Now().Add(time.Hour))
 	} else {

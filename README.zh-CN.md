@@ -134,7 +134,7 @@ fib 的 WebRTC 实现（见 fib 的 [WebRTC 文档](https://github.com/lesismal/
 | [`webrtc/sfu`](webrtc/sfu) | 一个浏览器发布摄像头和麦克风（WHIP），任意多个观看（WHEP）；服务端用每种媒体一个 `TrackLocal` 把 RTP 转发给所有观看者，并把他们的 PLI 转交发布者 |
 | [`webrtc/datachannel`](webrtc/datachannel) | 两个 Go PeerConnection，不用浏览器：Mux 上的服务端经 fib/http 应答，客户端用自己的端口，在可靠、无序、部分可靠三种 channel 上收发消息；`-turn` 让所有流量经 TURN 中转 |
 | [`webrtc/media`](webrtc/media) | Go 到 Go 的 RTP：合成的 VP8、Opus 包写入 `TrackLocal`，经 `OnTrack` 接收并按 SSRC 统计，再发一个 PLI，发送端在 `OnKeyFrameRequest` 中收到 |
-| [`webrtc/turnserver`](webrtc/turnserver) | 独立的 TURN 服务器（`webrtc/turn/turnserver`）：固定用户或限时凭据的 secret、中继端口范围、公网 IP、允许中继到的对端；启动时打印一个可给页面用的 `RTCIceServer` |
+| [`webrtc/turnserver`](webrtc/turnserver) | 独立的 TURN 服务器（`webrtc/turn/turnserver`），走 UDP，加 `-tcp` / `-tls` 也走 TCP 和 TLS（`ListenTCP`、`ListenTLS`）：固定用户或限时凭据的 secret、中继端口范围、公网 IP、允许中继到的对端；启动时打印一个可给页面用的 `RTCIceServer` |
 | [`webrtc/stun`](webrtc/stun) | 应答 Binding 的 STUN 服务端，以及向 STUN 服务器（默认 `stun.l.google.com:19302`）查询自己 server-reflexive 地址的客户端，用到 `Engine.OpenUDPPeer` 和 `stun.Transaction` |
 
 `webrtc/whip` 是浏览器示例和 `webrtc/datachannel` 共用的 WHIP/WHEP 信令。
