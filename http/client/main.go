@@ -203,10 +203,10 @@ func headerTimeoutStep(ctx context.Context, client *fibhttp.Client, base string,
 // one goes, one waits, and one is turned away. It runs first, with no
 // connection yet: the first request has one dialed for it, which does not
 // count as waiting, and the dialed connection takes it, so the count is the
-// same whether the burst meets the dial in progress or done. After a step
-// whose connection closed, it would not be: a closed connection counts
-// against MaxConnsPerHost until the client has heard of the close, which may
-// be after the request on it has failed.
+// same whether the burst meets the dial in progress or done. A connection the
+// client closed, as the header timeout's is, stops counting against
+// MaxConnsPerHost before its failed request hears why (fib 9824c68), so the
+// step could run later too; first keeps the demo's order easy to follow.
 func pendingStep(ctx context.Context, client *fibhttp.Client, base string, out io.Writer) error {
 	results := make([]string, 3)
 	var wg sync.WaitGroup
