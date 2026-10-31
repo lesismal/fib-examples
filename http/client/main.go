@@ -9,13 +9,13 @@
 //
 // It starts a server of its own, and runs against it:
 //
-//   - ResponseHeaderTimeout bounds the wait for a response's header alone,
-//     where Timeout bounds the whole exchange: a server slow to begin fails
-//     with ErrResponseHeaderTimeout.
 //   - MaxPendingPerHost caps the requests waiting for one of the
 //     MaxConnsPerHost connections to a host; past it a request fails at once
 //     with ErrTooManyPending, which a proxy answers 503, rather than joining
 //     a queue that grows for as long as the host is stuck.
+//   - ResponseHeaderTimeout bounds the wait for a response's header alone,
+//     where Timeout bounds the whole exchange: a server slow to begin fails
+//     with ErrResponseHeaderTimeout.
 //   - StreamResponseBody with StreamUnknownLengthAtHeader runs the callback of
 //     a chunked body at its header, so each event of a stream arrives as it is
 //     sent; ClientResponse.HoldBody pauses the delivery, as a consumer that
@@ -104,7 +104,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	defer client.Close()
 
 	steps := []func(context.Context, *fibhttp.Client, string, io.Writer) error{
-		headerTimeoutStep, pendingStep, eventsStep, bodyBytesStep, trailerStep,
+		pendingStep, headerTimeoutStep, eventsStep, bodyBytesStep, trailerStep,
 	}
 	for _, step := range steps {
 		if err := step(ctx, client, base, out); err != nil {
@@ -200,14 +200,14 @@ func headerTimeoutStep(ctx context.Context, client *fibhttp.Client, base string,
 }
 
 // pendingStep sends three requests at once over the one connection allowed:
-// one goes, one waits, and one is turned away.
+// one goes, one waits, and one is turned away. It runs first, with no
+// connection yet: the first request has one dialed for it, which does not
+// count as waiting, and the dialed connection takes it, so the count is the
+// same whether the burst meets the dial in progress or done. After a step
+// whose connection closed, it would not be: a closed connection counts
+// against MaxConnsPerHost until the client has heard of the close, which may
+// be after the request on it has failed.
 func pendingStep(ctx context.Context, client *fibhttp.Client, base string, out io.Writer) error {
-	// The connection is dialed first, and kept: a request a connection is
-	// being dialed for is waiting too, which would make the count race the
-	// dial.
-	if _, err := client.Go(get(ctx, base+"/small")).Wait(); err != nil {
-		return err
-	}
 	results := make([]string, 3)
 	var wg sync.WaitGroup
 	for i := range 3 {

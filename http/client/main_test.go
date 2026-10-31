@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// Each step does what its comment says: the slow header times out, the
-// third request is turned away, the events arrive one by one with the hold
+// Each step does what its comment says: the third request is turned away,
+// the slow header times out, the events arrive one by one with the hold
 // between the second and the third, the small body is whole, the trailer's
 // checksum matches, and the gzip transfer coding is decoded.
 func TestRunSteps(t *testing.T) {
