@@ -75,16 +75,44 @@ go run ./http/upload/client -mode resume -file /tmp/big.bin -name part.bin   # �
 （[`http/upload/uploadclient`](http/upload/uploadclient)）：不论哪种协议，body 都经 `Context.OnBody` 到达，
 背压分别来自 TCP、HTTP/2 窗口和 QUIC 流控。
 
+### HTTP 单项功能
+
+下面每个目录都是一个程序：自己启动 server，用 client 访问它，打印过程后退出；`-h` 列出参数，带 `-serve`
+的可以一直运行，供 curl 访问。除非表中另有说明，它们走 HTTP/1.1，所演示的功能在 HTTP/2、HTTP/3 上用法相同。
+
+| 目录 | 演示内容 |
+|------|----------|
+| [`http/duplex`](http/duplex) | `Context.ServeDuplex`：handler 同时读请求 body、写响应，走 h2c，每收到一行就立即回复，client 收到回复后才发下一行 |
+| [`http/bodyfilter`](http/bodyfilter) | `OnBodyFilter`：gzip 中间件的 filter 保持流式输出（`BodyFlusher`），HEAD 或客户端断开时归还压缩器（`BodyAborter`）；`OnHeaderAsync` 与 `OnBodyFilterAsync`：在“插件”协程池里决定响应头和 body |
+| [`http/sendfile`](http/sendfile) | `Context.SendFile`：任意大小的文件，不占 worker 等磁盘或客户端（sendfile，Linux 上加 `-tls` 走内核 TLS），Range 请求，以及 `SendFileStall` 放弃一个什么都不读的客户端 |
+| [`http/nowait`](http/nowait) | `Context.WriteNoWait` 与 `OnWritable`：没有协程阻塞地流式输出响应，分别由快、慢两个客户端控速；`RespondCopy` 从池化的临时缓冲区应答；`OnFinish` 访问日志读回 `SetValue` 存的值 |
+| [`http/requestbody`](http/requestbody) | body 到达之前能做的事：按路由 `LimitBody`，带 `Expect: 100-continue` 时 body 一个字节都不发就被拒绝；`StreamRequestBodyAtHeader`：聊天式请求的每条消息在下一条发出前就到达 handler；两个 `OnCancel` 回调都收到 `Client.Start` 的 `Call.Cancel` |
+| [`http/client`](http/client) | fib 的 client：`ResponseHeaderTimeout`、`MaxPendingPerHost`（`ErrTooManyPending`）、在响应头到达时就开始接收的涓流 body 及 `HoldBody` 暂停、`BodyBytes`、以 `CloseWithTrailer` 结束的 `BodyWriter` 上传，以及解码 `gzip, chunked` 传输编码 |
+| [`http/upgrade`](http/upgrade) | 协议切换的代理：后端切换后（`Client.StartUpgrade`）才对保留的请求做 Upgrade，中继由 `Tunnel.NotifySendable` 与 `HoldReads` 控速 |
+| [`http/zerortt`](http/zerortt) | HTTP/1.1 的 TLS 1.3 0-RTT：`Config.EarlyData` 与 `ClientConfig.EarlyData`，恢复会话后的 GET 作为 early data 发出并带 `Early-Data: 1`，POST 等握手完成再发；`-suite` 选择 TLS 1.3 密码套件（`TLS13CipherSuites`，含 ChaCha20-Poly1305） |
+| [`http2/settings`](http2/settings) | 两端的 `HTTP2Config`（窗口、帧大小、HPACK 表、自适应窗口），从 server 的 SETTINGS 帧读回；server 对静默 client 发 PING，client 对失联 server 发 PING（`ErrPingTimeout`）；PING 洪泛被 `ENHANCE_YOUR_CALM` 结束；`Engine.Close` 时发 GOAWAY |
+| [`http3/altsvc`](http3/altsvc) | `http3.AltSvcClient`：先走 TCP 上的 HTTPS，看到 `Alt-Svc` 后改走 HTTP/3；UDP 不通的源站退回 TCP |
+| [`http3/transport`](http3/transport) | HTTP/3 下面的 QUIC：`RetryHandshakes` 与 NEW_TOKEN、路径 MTU 探测把数据报从 1200 字节提到 1472 字节，以及 `TransportConfig`，从 server 收到的数据报上观察 |
+
 ### 一个引擎、一个端口上的多种协议
 
 | 目录 | 演示内容 |
 |------|----------|
 | [`multiprotocol`](multiprotocol) | 一个引擎同时提供明文 HTTP（`:8090`）、带 HTTP/2 与 HTTP/3 的 HTTPS（`:8453`）、WebSocket（`:8091`）和裸 TCP echo（`:9010`、`:9011`），另有一个端口（`:9012`）由 `mux` 包按首字节区分 HTTPS、HTTP、h2c 与 echo |
 | [`multiproto`](multiproto) | 用 `multiproto` 包在一个端口（`:9000`）上提供 HTTPS（HTTP/1.1 与 HTTP/2）、HTTP/1.1、h2c、WebSocket、gRPC、SOCKS5/4/4a、HTTP CONNECT 代理、arpc 与 TCP echo；它的 client 会逐一使用这些协议，server 的文件头注释列出了每种协议对应的 curl 或客户端命令 |
-| [`socks`](socks) | 同一端口（`:1080`）上的 SOCKS5（含 UDP ASSOCIATE）、SOCKS4、SOCKS4a 与 HTTP CONNECT 代理；`-user`/`-pass` 开启认证，client 经它抓取一个 URL |
+| [`socks`](socks) | 同一端口（`:1080`）上的 SOCKS5（含 UDP ASSOCIATE）、SOCKS4、SOCKS4a 与 HTTP CONNECT 代理；`-user`/`-pass` 开启认证，`-idle` 关闭长时间无数据的中继，client 经它抓取一个 URL |
 
 [`udp/openpeer`](udp/openpeer) 单独演示 `Engine.OpenUDPPeer`：UDP binding 主动向某个地址发送，并在同一个端口、
 同一个连接上收到回复。
+
+### 引擎与 socket
+
+| 目录 | 演示内容 |
+|------|----------|
+| [`tcp/limits`](tcp/limits) | `Config.MaxConns` 拒绝超出的连接（`Stats.ConnsRefused`），`MaxWriteQueueBytes` 与 `SetWriteQueueLimit` 关闭不读数据的对端（`ErrSendQueueFull`），`PollBatchSize`，以及 `Engine.Settings` / `LogSettings` |
+| [`tcp/proxyprotocol`](tcp/proxyprotocol) | 用单独的 handler 读 PROXY protocol v1 头，`Connection.SetRemoteAddrPort`，再用 `SetHandler` 把连接交给 HTTP，后者看到的是负载均衡器后面的真实客户端地址 |
+| [`tcp/prefork`](tcp/prefork) | `prefork` 包多进程服务，`BalanceReusePort` 用 eBPF 轮询分配新连接；`-dial` 统计各进程接到的连接。prefork 与均衡器都需要 Linux（均衡器还需要 CAP_BPF 和 bpffs），其他系统上由单个进程服务 |
+| [`udp/peers`](udp/peers) | `Connection.SetUDPIdleTimeout`：每个 UDP 对端各自的超时（短的、引擎默认的、不超时），以及监听 socket 上的 `SetDontFragment` |
 
 ### 网关
 

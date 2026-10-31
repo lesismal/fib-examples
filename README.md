@@ -78,16 +78,45 @@ The handler is shared by all three protocols ([`http/upload/service`](http/uploa
 the client logic ([`http/upload/uploadclient`](http/upload/uploadclient)): the body arrives through
 `Context.OnBody` whatever carried it, and the back-pressure comes from TCP, the HTTP/2 window or QUIC.
 
+### HTTP, one feature at a time
+
+Each of these is one program that starts its own server, runs a client against it, prints what happened and
+exits; `-h` lists its flags, and those with `-serve` keep serving for curl. Unless a row says otherwise they
+speak HTTP/1.1, and what they show works the same over HTTP/2 and HTTP/3.
+
+| Directory | What it shows |
+|-----------|---------------|
+| [`http/duplex`](http/duplex) | `Context.ServeDuplex`: a handler that reads its request body and writes its response at once, over h2c, answering each line before the client sends the next |
+| [`http/bodyfilter`](http/bodyfilter) | `OnBodyFilter`: a gzip middleware whose filter streams (`BodyFlusher`) and gives its compressor back on HEAD or a lost client (`BodyAborter`); `OnHeaderAsync` and `OnBodyFilterAsync`, a header and a body decided on goroutines of a "plugin" pool |
+| [`http/sendfile`](http/sendfile) | `Context.SendFile`, a file of any size with no worker waiting for the disk or the client (sendfile, kernel TLS on Linux with `-tls`), a byte range, and `SendFileStall` giving up on a client that reads nothing |
+| [`http/nowait`](http/nowait) | `Context.WriteNoWait` and `OnWritable`: a response streamed without a goroutine waiting, paced by a fast and a slow client; `RespondCopy` from a pooled scratch buffer; `SetValue` read back by an `OnFinish` access log |
+| [`http/requestbody`](http/requestbody) | a request's body before it arrives: `LimitBody` per route, refused with `Expect: 100-continue` before any of it is sent; `StreamRequestBodyAtHeader`, a chat whose messages each reach the handler before the next is sent; two `OnCancel` callbacks hearing `Client.Start`'s `Call.Cancel` |
+| [`http/client`](http/client) | fib's client: `ResponseHeaderTimeout`, `MaxPendingPerHost` (`ErrTooManyPending`), a trickling body taken at its header and paused with `HoldBody`, `BodyBytes`, a `BodyWriter` upload ended by `CloseWithTrailer`, and a `gzip, chunked` transfer coding decoded |
+| [`http/upgrade`](http/upgrade) | a proxy for a protocol switch: the retained request upgraded only once the backend has switched (`Client.StartUpgrade`), and a relay paced by `Tunnel.NotifySendable` and `HoldReads` |
+| [`http/zerortt`](http/zerortt) | TLS 1.3 0-RTT for HTTP/1.1: `Config.EarlyData` and `ClientConfig.EarlyData`, resumed GETs sent as early data with `Early-Data: 1`, a POST that waits for the handshake; `-suite` picks the TLS 1.3 cipher suite (`TLS13CipherSuites`, ChaCha20-Poly1305 among them) |
+| [`http2/settings`](http2/settings) | `HTTP2Config` on both ends (windows, frame size, HPACK table, adaptive windows) read back from the server's SETTINGS; the server's PING of a quiet client and the client's of a dead server (`ErrPingTimeout`); a PING flood ended by `ENHANCE_YOUR_CALM`; GOAWAY on `Engine.Close` |
+| [`http3/altsvc`](http3/altsvc) | `http3.AltSvcClient`: HTTPS over TCP until `Alt-Svc` advertises HTTP/3, and back to TCP for an origin whose UDP is blocked |
+| [`http3/transport`](http3/transport) | the QUIC under HTTP/3: `RetryHandshakes` and NEW_TOKEN, path MTU discovery growing datagrams from 1200 to 1472 bytes, and `TransportConfig`, watched from the datagrams the server receives |
+
 ### Many protocols, one engine or one port
 
 | Directory | What it shows |
 |-----------|---------------|
 | [`multiprotocol`](multiprotocol) | one engine serving plain HTTP (`:8090`), HTTPS with HTTP/2 and HTTP/3 (`:8453`), WebSocket (`:8091`) and a raw TCP echo (`:9010`, `:9011`), plus one port (`:9012`) where package `mux` tells HTTPS, HTTP, h2c and the echo apart by their first bytes |
 | [`multiproto`](multiproto) | package `multiproto` on one port (`:9000`): HTTPS (HTTP/1.1 and HTTP/2), HTTP/1.1, h2c, WebSocket, gRPC, SOCKS5/4/4a, an HTTP CONNECT proxy, arpc and a TCP echo; its client speaks every one of them, and the server's doc comment lists a curl or client command for each |
-| [`socks`](socks) | a SOCKS5 (with UDP ASSOCIATE), SOCKS4 and SOCKS4a proxy and an HTTP CONNECT proxy on one port (`:1080`); `-user`/`-pass` require authentication, and the client fetches a URL through it |
+| [`socks`](socks) | a SOCKS5 (with UDP ASSOCIATE), SOCKS4 and SOCKS4a proxy and an HTTP CONNECT proxy on one port (`:1080`); `-user`/`-pass` require authentication, `-idle` closes relays that carry nothing, and the client fetches a URL through it |
 
 [`udp/openpeer`](udp/openpeer) shows `Engine.OpenUDPPeer` on its own: a UDP binding that speaks first to an
 address and hears the reply on the same port and connection.
+
+### Engine and sockets
+
+| Directory | What it shows |
+|-----------|---------------|
+| [`tcp/limits`](tcp/limits) | `Config.MaxConns` refusing connections past it (`Stats.ConnsRefused`), `MaxWriteQueueBytes` and `SetWriteQueueLimit` closing a peer that reads none of a flood (`ErrSendQueueFull`), `PollBatchSize`, and `Engine.Settings` / `LogSettings` |
+| [`tcp/proxyprotocol`](tcp/proxyprotocol) | a PROXY protocol v1 header read by a handler of its own, `Connection.SetRemoteAddrPort`, and `SetHandler` handing the connection to HTTP, which then sees the client behind a load balancer |
+| [`tcp/prefork`](tcp/prefork) | package `prefork` serving from several processes, and `BalanceReusePort` spreading connections round-robin with eBPF; `-dial` counts who answered. Prefork and the balancer need Linux (the balancer also CAP_BPF and bpffs); elsewhere one process serves |
+| [`udp/peers`](udp/peers) | `Connection.SetUDPIdleTimeout`, a timeout per UDP peer (short, the engine's, or none), and `SetDontFragment` on the listener's socket |
 
 ### Gateway
 

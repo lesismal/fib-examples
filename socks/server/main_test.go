@@ -113,6 +113,58 @@ func TestRunRelays(t *testing.T) {
 	}
 }
 
+// With -idle a relay that carries nothing is closed, over SOCKS5 and over
+// CONNECT alike.
+func TestRunClosesIdleRelays(t *testing.T) {
+	target, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	go func() {
+		for {
+			conn, err := target.Accept()
+			if err != nil {
+				return
+			}
+			go func() { defer conn.Close(); _, _ = io.Copy(io.Discard, conn) }() // says nothing
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, []string{"-addr", "127.0.0.1:0", "-idle", "200ms"}, io.Discard, func(addr string) { started <- addr })
+	}()
+	addr := <-started
+	ip := target.Addr().(*net.TCPAddr)
+	socks5 := append([]byte{5, 1, 0, 5, 1, 0, 1}, ip.IP.To4()...)
+	socks5 = append(socks5, byte(ip.Port>>8), byte(ip.Port))
+	connect := []byte("CONNECT " + ip.String() + " HTTP/1.1\r\nHost: " + ip.String() + "\r\n\r\n")
+	for name, hello := range map[string][]byte{"SOCKS5": socks5, "CONNECT": connect} {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		start := time.Now()
+		if _, err := conn.Write(hello); err != nil {
+			t.Fatal(err)
+		}
+		// The proxy's answer, and then the close once the relay idles.
+		_, err = io.Copy(io.Discard, conn)
+		conn.Close()
+		if err != nil || time.Since(start) < 150*time.Millisecond || time.Since(start) > 5*time.Second {
+			t.Errorf("%s: relay ended after %v: %v", name, time.Since(start), err)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunRejectsBadFlags(t *testing.T) {
 	if err := run(context.Background(), []string{"-nope"}, io.Discard, nil); err == nil {
 		t.Fatal("an unknown flag ran")

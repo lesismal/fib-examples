@@ -15,6 +15,11 @@
 //	go run ./socks/server -user me -pass secret
 //	curl --proxy socks5h://me:secret@127.0.0.1:1080 https://example.com/
 //	curl --proxy http://me:secret@127.0.0.1:1080 https://example.com/
+//
+// -idle closes a relayed connection, SOCKS or CONNECT, once nothing has gone
+// either way for that long (socks.Config.IdleTimeout and
+// ConnectProxyConfig.IdleTimeout), so that a client that walked away does
+// not hold a connection to its target forever.
 package main
 
 import (
@@ -26,6 +31,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	fib "github.com/lesismal/fib"
 	"github.com/lesismal/fib-examples/example"
@@ -53,12 +59,14 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(addr stri
 	addr := flags.String("addr", "127.0.0.1:1080", "TCP address, and UDP address for UDP ASSOCIATE")
 	user := flags.String("user", "", "username SOCKS5 clients must log in with")
 	pass := flags.String("pass", "", "password SOCKS5 clients must log in with")
+	idle := flags.Duration("idle", 5*time.Minute, "close a relay that carries nothing either way for this long; 0 never does")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
 	var config socks.Config
 	var connect fibhttp.ConnectProxyConfig
+	config.IdleTimeout, connect.IdleTimeout = *idle, *idle
 	if *user != "" || *pass != "" {
 		config.Authenticate = func(u, p string) bool { return u == *user && p == *pass }
 		connect.Authenticate = config.Authenticate
