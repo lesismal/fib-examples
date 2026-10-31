@@ -86,7 +86,7 @@ go run ./http/upload/client -mode resume -file /tmp/big.bin -name part.bin   # �
 | [`http/bodyfilter`](http/bodyfilter) | `OnBodyFilter`：gzip 中间件的 filter 保持流式输出（`BodyFlusher`），HEAD 或客户端断开时归还压缩器（`BodyAborter`）；`OnHeaderAsync` 与 `OnBodyFilterAsync`：在“插件”协程池里决定响应头和 body |
 | [`http/sendfile`](http/sendfile) | `Context.SendFile`：任意大小的文件，不占 worker 等磁盘或客户端（sendfile，Linux 上加 `-tls` 走内核 TLS），Range 请求，以及 `SendFileStall` 放弃一个什么都不读的客户端 |
 | [`http/nowait`](http/nowait) | `Context.WriteNoWait` 与 `OnWritable`：没有协程阻塞地流式输出响应，分别由快、慢两个客户端控速；`RespondCopy` 从池化的临时缓冲区应答；`OnFinish` 访问日志读回 `SetValue` 存的值 |
-| [`http/requestbody`](http/requestbody) | body 到达之前能做的事：按路由 `LimitBody`，带 `Expect: 100-continue` 时 body 一个字节都不发就被拒绝；`StreamRequestBodyAtHeader`：聊天式请求的每条消息在下一条发出前就到达 handler；两个 `OnCancel` 回调都收到 `Client.Start` 的 `Call.Cancel` |
+| [`http/requestbody`](http/requestbody) | body 到达之前能做的事：按路由 `LimitBody`，超过 1 MiB `StreamRequestBodyThreshold` 的 8 MiB 上传在请求头就被拒绝，带 `Expect: 100-continue` 时 body 一个字节都不发；`StreamRequestBodyAtHeader`：聊天式请求的每条消息在下一条发出前就到达 handler；上传中途断开，handler 的 `OnBody` 与中间件的 `OnCancel` 都收到；两个 `OnCancel` 回调都收到 `Client.Start` 的 `Call.Cancel` |
 | [`http/client`](http/client) | fib 的 client：`ResponseHeaderTimeout`、`MaxPendingPerHost`（`ErrTooManyPending`）、在响应头到达时就开始接收的涓流 body 及 `HoldBody` 暂停、`BodyBytes`、以 `CloseWithTrailer` 结束的 `BodyWriter` 上传，以及解码 `gzip, chunked` 传输编码 |
 | [`http/upgrade`](http/upgrade) | 协议切换的代理：后端切换后（`Client.StartUpgrade`）才对保留的请求做 Upgrade，中继由 `Tunnel.NotifySendable` 与 `HoldReads` 控速 |
 | [`http/zerortt`](http/zerortt) | HTTP/1.1 的 TLS 1.3 0-RTT：`Config.EarlyData` 与 `ClientConfig.EarlyData`，恢复会话后的 GET 作为 early data 发出并带 `Early-Data: 1`，POST 等握手完成再发；`-suite` 选择 TLS 1.3 密码套件（`TLS13CipherSuites`，含 ChaCha20-Poly1305） |

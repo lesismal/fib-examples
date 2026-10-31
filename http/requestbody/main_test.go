@@ -11,8 +11,9 @@ import (
 )
 
 // The large avatar is refused with none of it sent, the chat's messages each
-// reach the handler before the next is sent, and both OnCancel callbacks
-// hear the abandoned report, the handler's first.
+// reach the handler before the next is sent, the dropped upload reaches both
+// the handler's OnBody and the middleware's OnCancel, and both OnCancel
+// callbacks hear the abandoned report, the handler's first.
 func TestRunRequests(t *testing.T) {
 	var out bytes.Buffer
 	if err := run(context.Background(), nil, &out); err != nil {
@@ -27,6 +28,10 @@ func TestRunRequests(t *testing.T) {
 		`server: /chat got "hello from fib #2"`,
 		`server: /chat got "hello from fib #3"`,
 		`client: POST /chat: 200 OK "51 bytes of chat"`,
+		"server: /upload receiving",
+		"client: dropped POST /upload: the user cancelled the upload",
+		"server: /upload's OnBody: ",
+		"server: middleware's OnCancel: ",
 		"server: /report building",
 		"client: abandoned GET /report: the user closed the tab",
 		"server: handler's OnCancel stopped the report: ",
