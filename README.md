@@ -48,7 +48,14 @@ Each protocol has a directory, split into `nontls` and `tls` (UDP's encrypted tw
 fib's CI runs the [Autobahn](https://github.com/crossbario/autobahn-testsuite) WebSocket test suite
 against both WebSocket servers.
 
-### RPC
+### Transports over UDP: KCP and QUIC
+
+| Directory | What it shows | Default address |
+|-----------|---------------|-----------------|
+| [`kcp`](kcp) | fib/kcp: an echo server whose sessions are `net.Conn`s, copied back by a goroutine each, and its client from `kcp.Dial`; the flags are kcptun's (`-mode`, `-crypt`, `-key`, `-ds`, `-ps`), with its defaults (AES, FEC 10/3), so either end also talks to kcp-go set up the same way | `127.0.0.1:9002` |
+| [`kcp/messages`](kcp/messages) | the same without a goroutine per session: `Config.OnMessage` gets each message whole on a fib worker and `Session.Send` answers it; the client's messages grow to many segments and come back whole | `127.0.0.1:9003` |
+| [`quic`](quic) | QUIC without HTTP/3: fib/http3/quic on a UDP binding, the server echoing every stream a client opens, the client opening one stream per message; ALPN `fib-echo` | `127.0.0.1:9004` |
+
 
 | Directory | What it shows | Default address |
 |-----------|---------------|-----------------|
@@ -156,7 +163,7 @@ every TLS example.
 How TLS is added differs by protocol: TCP, HTTP and WebSocket servers wrap their handler with
 `fibtls.NewServer`, and their clients use `fibtls.Dial`, `ClientConfig.TLSConfig` and
 `DialerConfig.TLSConfig`. QUIC does its own TLS, so an HTTP/3 server hands its TLS config to
-`http3.NewHandler`, and its client sets `http3.ClientConfig.TLSConfig`.
+`http3.NewHandler`, and its client sets `http3.ClientConfig.TLSConfig`; the raw [`quic`](quic) example passes them in `quic.Config.TLSConfig` with its own ALPN.
 
 ## Layout
 
@@ -165,6 +172,7 @@ fib-examples/
 ├── example/       the plumbing every example shares (start, serve until Ctrl-C, stop), so each shows only its protocol
 ├── certs/         self-signed certificates for the TLS examples
 ├── tcp/ udp/ tls/ http/ http2/ http2only/ http3/ websocket/
+├── kcp/ quic/
 ├── webrtc/
 ├── arpc/ grpc/
 ├── multiprotocol/ multiproto/ socks/

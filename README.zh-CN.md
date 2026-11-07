@@ -45,7 +45,14 @@ go run ./tcp/nontls/client     # 另一个终端
 
 fib 的 CI 用这两个 WebSocket server 跑 [Autobahn](https://github.com/crossbario/autobahn-testsuite) 测试套件。
 
-### RPC
+### 基于 UDP 的传输：KCP 与 QUIC
+
+| 目录 | 演示内容 | 默认地址 |
+|------|----------|----------|
+| [`kcp`](kcp) | fib/kcp：echo server 的每个会话都是 `net.Conn`，各由一个 goroutine 原样拷回，client 用 `kcp.Dial`；参数沿用 kcptun（`-mode`、`-crypt`、`-key`、`-ds`、`-ps`）及其默认值（AES、FEC 10/3），因此任一端也能与同样配置的 kcp-go 互通 | `127.0.0.1:9002` |
+| [`kcp/messages`](kcp/messages) | 同上，但不为每个会话开 goroutine：`Config.OnMessage` 在 fib worker 上收到完整的消息，用 `Session.Send` 回复；client 的消息逐渐增大到跨多个 segment，回来时仍然完整 | `127.0.0.1:9003` |
+| [`quic`](quic) | 不带 HTTP/3 的 QUIC：UDP binding 上的 fib/http3/quic，server 回显 client 打开的每个 stream，client 每条消息开一个 stream；ALPN 为 `fib-echo` | `127.0.0.1:9004` |
+
 
 | 目录 | 演示内容 | 默认地址 |
 |------|----------|----------|
@@ -147,7 +154,7 @@ TLS server 未指定 `-cert` 和 `-key` 时，会为 `localhost` 与 `127.0.0.1`
 
 不同协议加 TLS 的方式不同：TCP、HTTP、WebSocket server 用 `fibtls.NewServer` 包装原本的 handler，client
 分别用 `fibtls.Dial`、`ClientConfig.TLSConfig` 和 `DialerConfig.TLSConfig`。QUIC 自己完成 TLS，所以 HTTP/3
-server 把 TLS 配置直接交给 `http3.NewHandler`，client 设置 `http3.ClientConfig.TLSConfig`。
+server 把 TLS 配置直接交给 `http3.NewHandler`，client 设置 `http3.ClientConfig.TLSConfig`；裸 [`quic`](quic) 示例把它们放进 `quic.Config.TLSConfig`，并带上自己的 ALPN。
 
 ## 目录结构
 
@@ -156,6 +163,7 @@ fib-examples/
 ├── example/       所有示例共用的启动、运行到 Ctrl-C、停止等代码，让每个示例只展示自己的协议
 ├── certs/         TLS 示例用的自签名证书
 ├── tcp/ udp/ tls/ http/ http2/ http2only/ http3/ websocket/
+├── kcp/ quic/
 ├── webrtc/
 ├── arpc/ grpc/
 ├── multiprotocol/ multiproto/ socks/
