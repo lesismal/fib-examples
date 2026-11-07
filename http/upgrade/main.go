@@ -19,7 +19,11 @@
 //   - Each side relays to the other with Tunnel.Send, and when the other
 //     side has more than a limit unsent, holds its own reads
 //     (Tunnel.HoldReads) until Tunnel.NotifySendable says it has drained:
-//     backpressure from end to end, with nothing blocked.
+//     backpressure from end to end, with nothing blocked. Both tunnels turn
+//     their own write backpressure off (Tunnel.SetWriteBackpressure), so
+//     that a side whose sends to its peer back up still reads that peer:
+//     the backend answers as it reads, and with it on, the proxy and the
+//     backend each stop reading the other once their sockets fill.
 //
 // The backend upper-cases what it is sent; the client sends lines and then
 // a few megabytes, and checks what comes back.
@@ -128,12 +132,15 @@ func proxy(client *fibhttp.Client, backend string, holds *atomic.Int64) fibhttp.
 				return
 			}
 			r.up.peer = resp.Tunnel()
+			// The relay paces each side by the other's backlog instead.
+			r.up.peer.SetWriteBackpressure(false)
 			// The late switch, from this callback's goroutine.
 			down, err := c.Upgrade(protocol, nil, &r.down)
 			if err != nil {
 				_ = r.up.peer.Close()
 				return
 			}
+			down.SetWriteBackpressure(false)
 			r.down.peer = down
 		})
 	}
