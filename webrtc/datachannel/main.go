@@ -128,7 +128,18 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return fmt.Errorf("waiting for the echoes: %w", ctx.Err())
 		}
 	}
-	local, remote, _ := pc.SelectedCandidatePair()
+	// The ICE-lite server takes the first pair that answers, so the channels
+	// can finish before this full agent nominates: it waits up to
+	// NominationDelay (500ms) for a better pair before it selects one.
+	local, remote, ok := pc.SelectedCandidatePair()
+	for !ok {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for the selected pair: %w", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+		local, remote, ok = pc.SelectedCandidatePair()
+	}
 	fmt.Fprintf(out, "client: selected pair %s -> %s\n", candidateAddr(local), candidateAddr(remote))
 	return nil
 }

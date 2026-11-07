@@ -244,7 +244,15 @@ func TestTURNRelay(t *testing.T) {
 	if s := wait(t, got, "the echo"); s != "relayed" {
 		t.Fatalf("echo %q", s)
 	}
-	if local, _, ok := pc.SelectedCandidatePair(); !ok || !strings.Contains(local, "typ relay") {
+	// The server, ICE lite, takes the first pair that answers, so the echo
+	// can come back before this full agent nominates the pair, up to its
+	// NominationDelay (500ms) later.
+	local, _, ok := pc.SelectedCandidatePair()
+	for deadline := time.Now().Add(5 * time.Second); !ok && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		local, _, ok = pc.SelectedCandidatePair()
+	}
+	if !ok || !strings.Contains(local, "typ relay") {
 		t.Fatalf("selected local candidate %q", local)
 	}
 }
